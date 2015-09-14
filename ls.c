@@ -14,12 +14,21 @@
 #include "strlist.h"
 #include "sysstr.h"
 #include "sysutil.h"
+#include "utility.h"
 #include "tunables.h"
+
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 static void build_dir_line(struct mystr* p_str,
                            const struct mystr* p_filename_str,
                            const struct vsf_sysutil_statbuf* p_stat,
                            long curr_time);
+static void build_mlsx_entry(struct mystr* p_str,
+			     const struct mystr* p_filename_str,
+			     const struct vsf_sysutil_statbuf* p_stat);
 
 void
 vsf_ls_populate_dir_list(struct mystr_list* p_list,
@@ -28,7 +37,7 @@ vsf_ls_populate_dir_list(struct mystr_list* p_list,
                          const struct mystr* p_base_dir_str,
                          const struct mystr* p_option_str,
                          const struct mystr* p_filter_str,
-                         int is_verbose)
+                         enum EVSFListType e_list_type)
 {
   struct mystr dirline_str = INIT_MYSTR;
   struct mystr normalised_base_dir_str = INIT_MYSTR;
@@ -50,19 +59,24 @@ vsf_ls_populate_dir_list(struct mystr_list* p_list,
   loc_result = str_locate_char(p_option_str, 'l');
   if (loc_result.found)
   {
-    is_verbose = 1;
+    e_list_type = kVSFListTypeHumanReadable;
   }
   /* Invert "reverse" arg for "-t", the time sorting */
   if (t_option)
   {
     r_option = !r_option;
   }
-  if (is_verbose || t_option || F_option || p_subdir_list != 0)
+  if (e_list_type != kVSFListTypeNameOnly || t_option || F_option ||
+      p_subdir_list != 0)
   {
     do_stat = 1;
   }
   /* If the filter starts with a . then implicitly enable -a */
   if (!str_isempty(p_filter_str) && str_get_char_at(p_filter_str, 0) == '.')
+  {
+    a_option = 1;
+  }
+  if (e_list_type == kVSFListTypeMachineReadable)
   {
     a_option = 1;
   }
@@ -82,7 +96,7 @@ vsf_ls_populate_dir_list(struct mystr_list* p_list,
     }
   }
   /* If we're going to need to do time comparisions, cache the local time */
-  if (is_verbose)
+  if (e_list_type == kVSFListTypeHumanReadable)
   {
     curr_time = vsf_sysutil_get_time_sec();
   }
@@ -144,45 +158,64 @@ vsf_ls_populate_dir_list(struct mystr_list* p_list,
         continue;
       }
     }
-    if (is_verbose)
+    switch (e_list_type)
     {
-      static struct mystr s_final_file_str;
-      /* If it's a damn symlink, we need to append the target */
-      str_copy(&s_final_file_str, &s_next_filename_str);
-      if (vsf_sysutil_statbuf_is_symlink(s_p_statbuf))
-      {
-        static struct mystr s_temp_str;
-        int retval = str_readlink(&s_temp_str, &s_next_path_and_filename_str);
-        if (retval == 0 && !str_isempty(&s_temp_str))
-        {
-          str_append_text(&s_final_file_str, " -> ");
-          str_append_str(&s_final_file_str, &s_temp_str);
-        }
-      }
-      if (F_option && vsf_sysutil_statbuf_is_dir(s_p_statbuf))
-      {
-        str_append_char(&s_final_file_str, '/');
-      }
-      build_dir_line(&dirline_str, &s_final_file_str, s_p_statbuf, curr_time);
-    }
-    else
-    {
-      /* Just emit the filenames - note, we prepend the directory for NLST
-       * but not for LIST
-       */
-      str_copy(&dirline_str, &s_next_path_and_filename_str);
-      if (F_option)
-      {
-        if (vsf_sysutil_statbuf_is_dir(s_p_statbuf))
-        {
-          str_append_char(&dirline_str, '/');
-        }
-        else if (vsf_sysutil_statbuf_is_symlink(s_p_statbuf))
-        {
-          str_append_char(&dirline_str, '@');
-        }
-      }
-      str_append_text(&dirline_str, "\r\n");
+      case kVSFListTypeNameOnly:
+	{
+	  /* Just emit the filenames - note, we prepend the directory for NLST
+	   * but not for LIST
+	   */
+	  str_copy(&dirline_str, &s_next_path_and_filename_str);
+	  if (F_option)
+	  {
+	    if (vsf_sysutil_statbuf_is_dir(s_p_statbuf))
+	    {
+	      str_append_char(&dirline_str, '/');
+	    }
+	    else if (vsf_sysutil_statbuf_is_symlink(s_p_statbuf))
+	    {
+	      str_append_char(&dirline_str, '@');
+	    }
+	  }
+	  str_append_text(&dirline_str, "\r\n");
+	}
+	break;
+      case kVSFListTypeHumanReadable:
+	{
+	  static struct mystr s_final_file_str;
+	  /* If it's a damn symlink, we need to append the target */
+	  str_copy(&s_final_file_str, &s_next_filename_str);
+	  if (vsf_sysutil_statbuf_is_symlink(s_p_statbuf))
+	  {
+	    static struct mystr s_temp_str;
+	    int retval = str_readlink(&s_temp_str,
+				      &s_next_path_and_filename_str);
+	    if (retval == 0 && !str_isempty(&s_temp_str))
+	    {
+	      str_append_text(&s_final_file_str, " -> ");
+	      str_append_str(&s_final_file_str, &s_temp_str);
+	    }
+	  }
+	  if (F_option && vsf_sysutil_statbuf_is_dir(s_p_statbuf))
+	  {
+	    str_append_char(&s_final_file_str, '/');
+	  }
+	  build_dir_line(&dirline_str, &s_final_file_str, s_p_statbuf,
+			 curr_time);
+	}
+	break;
+      case kVSFListTypeMachineReadable:
+	{
+#if 0
+	  build_dir_line(&dirline_str, &s_next_filename_str, s_p_statbuf,
+			 curr_time);
+#endif
+	  build_mlsx_entry(&dirline_str, &s_next_filename_str, s_p_statbuf);
+	}
+	break;
+      default:
+	bug("unknown e_list_type in vsf_ls_populate_dir_list");
+	break;
     }
     /* Add filename into our sorted list - sorting by filename or time. Also,
      * if we are required to, maintain a distinct list of direct
@@ -446,4 +479,126 @@ build_dir_line(struct mystr* p_str, const struct mystr* p_filename_str,
   str_append_str(p_str, p_filename_str);
   str_append_text(p_str, "\r\n");
 }
+
+static void
+build_mlsx_entry(struct mystr* p_str, const struct mystr* p_filename_str,
+		 const struct vsf_sysutil_statbuf* p_stat)
+{
+#if 0
+  static struct mystr s_tmp_str;
+#endif
+  const struct stat* p_st = (const struct stat*) p_stat;
+  filesize_t size = vsf_sysutil_statbuf_get_size(p_stat);
+  char unique[34];
+#if 0
+  /* Permissions */
+  str_alloc_text(p_str, vsf_sysutil_statbuf_get_perms(p_stat));
+  str_append_char(p_str, ' ');
+  /* Hard link count */
+  str_alloc_ulong(&s_tmp_str, vsf_sysutil_statbuf_get_links(p_stat));
+  str_lpad(&s_tmp_str, 4);
+  str_append_str(p_str, &s_tmp_str);
+  str_append_char(p_str, ' ');
+  /* User */
+  if (tunable_hide_ids)
+  {
+    str_alloc_text(&s_tmp_str, "ftp");
+  }
+  else
+  {
+    int uid = vsf_sysutil_statbuf_get_uid(p_stat);
+    struct vsf_sysutil_user* p_user = 0;
+    if (tunable_text_userdb_names)
+    {
+      p_user = vsf_sysutil_getpwuid(uid);
+    }
+    if (p_user == 0)
+    {
+      str_alloc_ulong(&s_tmp_str, (unsigned long) uid);
+    }
+    else
+    {
+      str_alloc_text(&s_tmp_str, vsf_sysutil_user_getname(p_user));
+    }
+  }
+  str_rpad(&s_tmp_str, 8);
+  str_append_str(p_str, &s_tmp_str);
+  str_append_char(p_str, ' ');
+  /* Group */
+  if (tunable_hide_ids)
+  {
+    str_alloc_text(&s_tmp_str, "ftp");
+  }
+  else
+  {
+    int gid = vsf_sysutil_statbuf_get_gid(p_stat);
+    struct vsf_sysutil_group* p_group = 0;
+    if (tunable_text_userdb_names)
+    {
+      p_group = vsf_sysutil_getgrgid(gid);
+    }
+    if (p_group == 0)
+    {
+      str_alloc_ulong(&s_tmp_str, (unsigned long) gid);
+    }
+    else
+    {
+      str_alloc_text(&s_tmp_str, vsf_sysutil_group_getname(p_group));
+    }
+  }
+  str_rpad(&s_tmp_str, 8);
+  str_append_str(p_str, &s_tmp_str);
+  str_append_char(p_str, ' ');
+#endif
+  /* Facts */
+  /* Size in octets */
+  str_alloc_text(p_str, "size=");
+  str_append_text(p_str, vsf_sysutil_filesize_t_to_str(size));
+  str_append_char(p_str, ';');
+  /* Last modification time */
+  str_append_text(p_str, "modify=");
+  str_append_text(p_str, vsf_sysutil_statbuf_get_numeric_date(p_stat, 0));
+  str_append_char(p_str, ';');
+  /* Entry type */
+  str_append_text(p_str, "type=");
+  if (vsf_sysutil_statbuf_is_dir(p_stat))
+  {
+    if (str_equal_text(p_filename_str, "."))
+    {
+      str_append_text(p_str, "cdir");
+    }
+    else if (str_equal_text(p_filename_str, ".."))
+    {
+      str_append_text(p_str, "pdir");
+    }
+    else
+    {
+      str_append_text(p_str, "dir");
+    }
+  }
+  else if (vsf_sysutil_statbuf_is_symlink(p_stat))
+  {
+    str_append_text(p_str, "OS.unix=symlink");
+  }
+  else
+  {
+    str_append_text(p_str, "file");
+  }
+  str_append_char(p_str, ';');
+  /* Unique id of file/directory */
+  str_append_text(p_str, "unique=");
+  snprintf(unique, sizeof(unique), "%lX+%lX",
+	   (unsigned long) p_st->st_dev, (unsigned long) p_st->st_ino);
+  str_append_text(p_str, unique);
+  str_append_char(p_str, ';');
+  /* TODO: Permissions */
+  /* End of Facts */
+
+  str_append_char(p_str, ' ');
+
+  /* Pathname */
+  str_append_str(p_str, p_filename_str);
+  str_append_text(p_str, "\r\n");
+}
+
 

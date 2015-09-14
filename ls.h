@@ -1,6 +1,8 @@
 #ifndef VSF_LS_H
 #define VSF_LS_H
 
+#include "ftpdataio.h"
+
 struct mystr;
 struct mystr_list;
 struct vsf_sysutil_dir;
@@ -17,7 +19,9 @@ struct vsf_sysutil_dir;
  * p_base_dir_str - the directory name we are listing, relative to current
  * p_option_str   - the string of options given to the LIST/NLST command
  * p_filter_str   - the filter string given to LIST/NLST - e.g. "*.mp3"
- * is_verbose     - set to 1 for LIST, 0 for NLST
+ * e_list_type    - set to kVSFListTypeNameOnly if NLST used,
+ *                         kVSFListTypeHumanReadable if LIST used,
+ *                         kVSFListTypeMachineReadable if MLSD used,
  */
 void vsf_ls_populate_dir_list(struct mystr_list* p_list,
                               struct mystr_list* p_subdir_list,
@@ -25,7 +29,7 @@ void vsf_ls_populate_dir_list(struct mystr_list* p_list,
                               const struct mystr* p_base_dir_str,
                               const struct mystr* p_option_str,
                               const struct mystr* p_filter_str,
-                              int is_verbose);
+                              enum EVSFListType e_list_type);
 
 /* vsf_filename_passes_filter()
  * PURPOSE

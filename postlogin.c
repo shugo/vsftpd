@@ -58,6 +58,7 @@ static void handle_help(struct vsf_session* p_sess);
 static void handle_stou(struct vsf_session* p_sess);
 static void handle_stat(struct vsf_session* p_sess);
 static void handle_stat_file(struct vsf_session* p_sess);
+static void handle_mlsd(struct vsf_session* p_sess);
 static void handle_logged_in_user(struct vsf_session* p_sess);
 static void handle_logged_in_pass(struct vsf_session* p_sess);
 static void handle_http(struct vsf_session* p_sess);
@@ -66,7 +67,8 @@ static int pasv_active(struct vsf_session* p_sess);
 static int port_active(struct vsf_session* p_sess);
 static void pasv_cleanup(struct vsf_session* p_sess);
 static void port_cleanup(struct vsf_session* p_sess);
-static void handle_dir_common(struct vsf_session* p_sess, int full_details,
+static void handle_dir_common(struct vsf_session* p_sess,
+			      enum EVSFListType e_list_type,
                               int stat_cmd);
 static void prepend_path_to_filename(struct mystr* p_str);
 static int get_remote_transfer_fd(struct vsf_session* p_sess,
@@ -396,6 +398,11 @@ process_post_login(struct vsf_session* p_sess)
     {
       handle_prot(p_sess);
     }
+    else if (tunable_dirlist_enable &&
+	     str_equal_text(&p_sess->ftp_cmd_str, "MLSD"))
+    {
+      handle_mlsd(p_sess);
+    }
     else if (str_equal_text(&p_sess->ftp_cmd_str, "USER"))
     {
       handle_logged_in_user(p_sess);
@@ -430,7 +437,8 @@ process_post_login(struct vsf_session* p_sess)
              str_equal_text(&p_sess->ftp_cmd_str, "OPTS") ||
              str_equal_text(&p_sess->ftp_cmd_str, "STAT") ||
              str_equal_text(&p_sess->ftp_cmd_str, "PBSZ") ||
-             str_equal_text(&p_sess->ftp_cmd_str, "PROT"))
+             str_equal_text(&p_sess->ftp_cmd_str, "PROT") ||
+             str_equal_text(&p_sess->ftp_cmd_str, "MLSD"))
     {
       vsf_cmdio_write(p_sess, FTP_NOPERM, "Permission denied.");
     }
@@ -794,11 +802,12 @@ file_close_out:
 static void
 handle_list(struct vsf_session* p_sess)
 {
-  handle_dir_common(p_sess, 1, 0);
+  handle_dir_common(p_sess, kVSFListTypeHumanReadable, 0);
 }
 
 static void
-handle_dir_common(struct vsf_session* p_sess, int full_details, int stat_cmd)
+handle_dir_common(struct vsf_session* p_sess, enum EVSFListType e_list_type,
+		  int stat_cmd)
 {
   static struct mystr s_option_str;
   static struct mystr s_filter_str;
@@ -902,7 +911,7 @@ handle_dir_common(struct vsf_session* p_sess, int full_details, int stat_cmd)
   {
     retval = vsf_ftpdataio_transfer_dir(p_sess, use_control, p_dir,
                                         &s_dir_name_str, &s_option_str,
-                                        &s_filter_str, full_details);
+                                        &s_filter_str, e_list_type);
   }
   if (!stat_cmd)
   {
@@ -1355,7 +1364,7 @@ handle_rnto(struct vsf_session* p_sess)
 static void
 handle_nlst(struct vsf_session* p_sess)
 {
-  handle_dir_common(p_sess, 0, 0);
+  handle_dir_common(p_sess, kVSFListTypeNameOnly, 0);
 }
 
 static void
@@ -1891,7 +1900,13 @@ handle_stat(struct vsf_session* p_sess)
 static void
 handle_stat_file(struct vsf_session* p_sess)
 {
-  handle_dir_common(p_sess, 1, 1);
+  handle_dir_common(p_sess, kVSFListTypeHumanReadable, 1);
+}
+
+static void
+handle_mlsd(struct vsf_session* p_sess)
+{
+  handle_dir_common(p_sess, kVSFListTypeMachineReadable, 0);
 }
 
 static int

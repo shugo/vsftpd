@@ -8,6 +8,13 @@ struct vsf_sysutil_sockaddr;
 struct vsf_sysutil_dir;
 struct vsf_session;
 
+enum EVSFListType
+{
+  kVSFListTypeNameOnly = 1,
+  kVSFListTypeHumanReadable,
+  kVSFListTypeMachineReadable
+};
+
 /* vsf_ftpdataio_dispose_transfer_fd()
  * PURPOSE
  * Close down the remote data transfer file descriptor. If unsent data reamins
@@ -89,14 +96,16 @@ struct vsf_transfer_ret vsf_ftpdataio_transfer_file(
  * p_base_dir_str - the directory we opened relative to the current one
  * p_option_str   - the options list provided to "ls"
  * p_filter_str   - the filter string provided to "ls"
- * is_verbose     - set to 0 if NLST used, 1 if LIST used
+ * e_list_type    - set to kVSFListTypeNameOnly if NLST used,
+ *                         kVSFListTypeHumanReadable if LIST used,
+ *                         kVSFListTypeMachineReadable if MLSD used,
  */
 int vsf_ftpdataio_transfer_dir(struct vsf_session* p_sess, int is_control,
                                struct vsf_sysutil_dir* p_dir,
                                const struct mystr* p_base_dir_str,
                                const struct mystr* p_option_str,
                                const struct mystr* p_filter_str,
-                               int is_verbose);
+                               enum EVSFListType e_list_type);
 
 #endif /* VSF_FTPDATAIO_H */
 
