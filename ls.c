@@ -552,9 +552,12 @@ build_mlsx_entry(struct mystr* p_str, const struct mystr* p_filename_str,
 #endif
   /* Facts */
   /* Size in octets */
-  str_alloc_text(p_str, "size=");
-  str_append_text(p_str, vsf_sysutil_filesize_t_to_str(size));
-  str_append_char(p_str, ';');
+  if (!vsf_sysutil_statbuf_is_dir(p_stat))
+  {
+    str_alloc_text(p_str, "size=");
+    str_append_text(p_str, vsf_sysutil_filesize_t_to_str(size));
+    str_append_char(p_str, ';');
+  }
   /* Last modification time */
   str_append_text(p_str, "modify=");
   str_append_text(p_str, vsf_sysutil_statbuf_get_numeric_date(p_stat, 0));
