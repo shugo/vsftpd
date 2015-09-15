@@ -101,6 +101,9 @@ one_process_start(void* p_arg)
     str_free(&user_name);
     str_free(&chdir_str);
   }
+  p_sess->uid = vsf_sysutil_geteuid();
+  p_sess->gid = vsf_sysutil_getegid();
+  p_sess->num_supp_groups = vsf_sysutil_getgroups(&p_sess->p_supp_groups);
   if (tunable_ptrace_sandbox)
   {
     ptrace_sandbox_attach_point();

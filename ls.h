@@ -23,7 +23,8 @@ struct vsf_sysutil_dir;
  *                         kVSFListTypeHumanReadable if LIST used,
  *                         kVSFListTypeMachineReadable if MLSD used,
  */
-void vsf_ls_populate_dir_list(struct mystr_list* p_list,
+void vsf_ls_populate_dir_list(struct vsf_session* p_sess,
+                              struct mystr_list* p_list,
                               struct mystr_list* p_subdir_list,
                               struct vsf_sysutil_dir* p_dir,
                               const struct mystr* p_base_dir_str,

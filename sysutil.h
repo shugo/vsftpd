@@ -7,6 +7,8 @@
 #include "filesize.h"
 #endif
 
+#include <unistd.h>
+
 /* Return value queries */
 int vsf_sysutil_retval_is_error(int retval);
 enum EVSFSysUtilError
@@ -40,6 +42,10 @@ enum EVSFSysUtilInterruptContext
 typedef void (*vsf_sighandle_t)(void*);
 typedef void (*vsf_async_sighandle_t)(int);
 typedef void (*vsf_context_io_t)(int, int, void*);
+
+#define VSF_SYSUTIL_R_OK R_OK
+#define VSF_SYSUTIL_W_OK W_OK
+#define VSF_SYSUTIL_X_OK X_OK
 
 void vsf_sysutil_install_null_sighandler(const enum EVSFSysUtilSignal sig);
 void vsf_sysutil_install_sighandler(const enum EVSFSysUtilSignal,
@@ -134,6 +140,12 @@ int vsf_sysutil_statbuf_is_readable_other(
   const struct vsf_sysutil_statbuf* p_stat);
 const char* vsf_sysutil_statbuf_get_sortkey_mtime(
   const struct vsf_sysutil_statbuf* p_stat);
+const char* vsf_sysutil_statbuf_get_unique(
+  const struct vsf_sysutil_statbuf* p_statbuf);
+int vsf_sysutil_statbuf_access(
+  const struct vsf_sysutil_statbuf* p_statbuf,
+  int mode, int uid, int gid,
+  int num_supp_groups, int* p_supp_groups);
 
 int vsf_sysutil_chmod(const char* p_filename, unsigned int mode);
 void vsf_sysutil_fchown(const int fd, const int uid, const int gid);
@@ -331,6 +343,7 @@ void vsf_sysutil_seteuid_numeric(int uid);
 void vsf_sysutil_setegid_numeric(int gid);
 void vsf_sysutil_clear_supp_groups(void);
 void vsf_sysutil_initgroups(const struct vsf_sysutil_user* p_user);
+int vsf_sysutil_getgroups(int **groups);
 void vsf_sysutil_chroot(const char* p_root_path);
 
 /* Time handling */

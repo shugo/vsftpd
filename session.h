@@ -38,6 +38,10 @@ struct vsf_session
   int is_guest;
   struct mystr user_str;
   struct mystr anon_pass_str;
+  int uid;
+  int gid;
+  int num_supp_groups;
+  int* p_supp_groups;
 
   /* Details of the FTP protocol state */
   filesize_t restart_pos;

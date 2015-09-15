@@ -466,6 +466,9 @@ common_do_login(struct vsf_session* p_sess, const struct mystr* p_user_str,
     str_free(&chdir_str);
     str_free(&userdir_str);
     p_sess->is_anonymous = anon;
+    p_sess->uid = vsf_sysutil_geteuid();
+    p_sess->gid = vsf_sysutil_getegid();
+    p_sess->num_supp_groups = vsf_sysutil_getgroups(&p_sess->p_supp_groups);
     seccomp_sandbox_init();
     seccomp_sandbox_setup_postlogin(p_sess);
     seccomp_sandbox_lockdown();

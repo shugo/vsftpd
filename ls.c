@@ -8,6 +8,7 @@
  */
 
 #include "ls.h"
+#include "session.h"
 #include "access.h"
 #include "defs.h"
 #include "str.h"
@@ -17,21 +18,19 @@
 #include "utility.h"
 #include "tunables.h"
 
-#include <stdio.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
-
 static void build_dir_line(struct mystr* p_str,
                            const struct mystr* p_filename_str,
                            const struct vsf_sysutil_statbuf* p_stat,
                            long curr_time);
 static void build_mlsx_entry(struct mystr* p_str,
-			     const struct mystr* p_filename_str,
-			     const struct vsf_sysutil_statbuf* p_stat);
+                             const struct mystr* p_filename_str,
+                             const struct vsf_sysutil_statbuf* p_stat,
+                             int uid, int gid,
+                             int num_supp_groups, int* p_supp_groups);
 
 void
-vsf_ls_populate_dir_list(struct mystr_list* p_list,
+vsf_ls_populate_dir_list(struct vsf_session* p_sess,
+                         struct mystr_list* p_list,
                          struct mystr_list* p_subdir_list,
                          struct vsf_sysutil_dir* p_dir,
                          const struct mystr* p_base_dir_str,
@@ -161,61 +160,59 @@ vsf_ls_populate_dir_list(struct mystr_list* p_list,
     switch (e_list_type)
     {
       case kVSFListTypeNameOnly:
-	{
-	  /* Just emit the filenames - note, we prepend the directory for NLST
-	   * but not for LIST
-	   */
-	  str_copy(&dirline_str, &s_next_path_and_filename_str);
-	  if (F_option)
-	  {
-	    if (vsf_sysutil_statbuf_is_dir(s_p_statbuf))
-	    {
-	      str_append_char(&dirline_str, '/');
-	    }
-	    else if (vsf_sysutil_statbuf_is_symlink(s_p_statbuf))
-	    {
-	      str_append_char(&dirline_str, '@');
-	    }
-	  }
-	  str_append_text(&dirline_str, "\r\n");
-	}
-	break;
+        {
+          /* Just emit the filenames - note, we prepend the directory for NLST
+           * but not for LIST
+           */
+          str_copy(&dirline_str, &s_next_path_and_filename_str);
+          if (F_option)
+          {
+            if (vsf_sysutil_statbuf_is_dir(s_p_statbuf))
+            {
+              str_append_char(&dirline_str, '/');
+            }
+            else if (vsf_sysutil_statbuf_is_symlink(s_p_statbuf))
+            {
+              str_append_char(&dirline_str, '@');
+            }
+          }
+          str_append_text(&dirline_str, "\r\n");
+        }
+        break;
       case kVSFListTypeHumanReadable:
-	{
-	  static struct mystr s_final_file_str;
-	  /* If it's a damn symlink, we need to append the target */
-	  str_copy(&s_final_file_str, &s_next_filename_str);
-	  if (vsf_sysutil_statbuf_is_symlink(s_p_statbuf))
-	  {
-	    static struct mystr s_temp_str;
-	    int retval = str_readlink(&s_temp_str,
-				      &s_next_path_and_filename_str);
-	    if (retval == 0 && !str_isempty(&s_temp_str))
-	    {
-	      str_append_text(&s_final_file_str, " -> ");
-	      str_append_str(&s_final_file_str, &s_temp_str);
-	    }
-	  }
-	  if (F_option && vsf_sysutil_statbuf_is_dir(s_p_statbuf))
-	  {
-	    str_append_char(&s_final_file_str, '/');
-	  }
-	  build_dir_line(&dirline_str, &s_final_file_str, s_p_statbuf,
-			 curr_time);
-	}
-	break;
+        {
+          static struct mystr s_final_file_str;
+          /* If it's a damn symlink, we need to append the target */
+          str_copy(&s_final_file_str, &s_next_filename_str);
+          if (vsf_sysutil_statbuf_is_symlink(s_p_statbuf))
+          {
+            static struct mystr s_temp_str;
+            int retval = str_readlink(&s_temp_str,
+                                      &s_next_path_and_filename_str);
+            if (retval == 0 && !str_isempty(&s_temp_str))
+            {
+              str_append_text(&s_final_file_str, " -> ");
+              str_append_str(&s_final_file_str, &s_temp_str);
+            }
+          }
+          if (F_option && vsf_sysutil_statbuf_is_dir(s_p_statbuf))
+          {
+            str_append_char(&s_final_file_str, '/');
+          }
+          build_dir_line(&dirline_str, &s_final_file_str, s_p_statbuf,
+                         curr_time);
+        }
+        break;
       case kVSFListTypeMachineReadable:
-	{
-#if 0
-	  build_dir_line(&dirline_str, &s_next_filename_str, s_p_statbuf,
-			 curr_time);
-#endif
-	  build_mlsx_entry(&dirline_str, &s_next_filename_str, s_p_statbuf);
-	}
-	break;
+        {
+          build_mlsx_entry(&dirline_str, &s_next_filename_str, s_p_statbuf,
+                           p_sess->uid, p_sess->gid,
+                           p_sess->num_supp_groups, p_sess->p_supp_groups);
+        }
+        break;
       default:
-	bug("unknown e_list_type in vsf_ls_populate_dir_list");
-	break;
+        bug("unknown e_list_type in vsf_ls_populate_dir_list");
+        break;
     }
     /* Add filename into our sorted list - sorting by filename or time. Also,
      * if we are required to, maintain a distinct list of direct
@@ -482,79 +479,17 @@ build_dir_line(struct mystr* p_str, const struct mystr* p_filename_str,
 
 static void
 build_mlsx_entry(struct mystr* p_str, const struct mystr* p_filename_str,
-		 const struct vsf_sysutil_statbuf* p_stat)
+                 const struct vsf_sysutil_statbuf* p_stat,
+                 int uid, int gid, int num_supp_groups, int* p_supp_groups)
 {
-#if 0
-  static struct mystr s_tmp_str;
-#endif
-  const struct stat* p_st = (const struct stat*) p_stat;
   filesize_t size = vsf_sysutil_statbuf_get_size(p_stat);
-  char unique[34];
-#if 0
-  /* Permissions */
-  str_alloc_text(p_str, vsf_sysutil_statbuf_get_perms(p_stat));
-  str_append_char(p_str, ' ');
-  /* Hard link count */
-  str_alloc_ulong(&s_tmp_str, vsf_sysutil_statbuf_get_links(p_stat));
-  str_lpad(&s_tmp_str, 4);
-  str_append_str(p_str, &s_tmp_str);
-  str_append_char(p_str, ' ');
-  /* User */
-  if (tunable_hide_ids)
-  {
-    str_alloc_text(&s_tmp_str, "ftp");
-  }
-  else
-  {
-    int uid = vsf_sysutil_statbuf_get_uid(p_stat);
-    struct vsf_sysutil_user* p_user = 0;
-    if (tunable_text_userdb_names)
-    {
-      p_user = vsf_sysutil_getpwuid(uid);
-    }
-    if (p_user == 0)
-    {
-      str_alloc_ulong(&s_tmp_str, (unsigned long) uid);
-    }
-    else
-    {
-      str_alloc_text(&s_tmp_str, vsf_sysutil_user_getname(p_user));
-    }
-  }
-  str_rpad(&s_tmp_str, 8);
-  str_append_str(p_str, &s_tmp_str);
-  str_append_char(p_str, ' ');
-  /* Group */
-  if (tunable_hide_ids)
-  {
-    str_alloc_text(&s_tmp_str, "ftp");
-  }
-  else
-  {
-    int gid = vsf_sysutil_statbuf_get_gid(p_stat);
-    struct vsf_sysutil_group* p_group = 0;
-    if (tunable_text_userdb_names)
-    {
-      p_group = vsf_sysutil_getgrgid(gid);
-    }
-    if (p_group == 0)
-    {
-      str_alloc_ulong(&s_tmp_str, (unsigned long) gid);
-    }
-    else
-    {
-      str_alloc_text(&s_tmp_str, vsf_sysutil_group_getname(p_group));
-    }
-  }
-  str_rpad(&s_tmp_str, 8);
-  str_append_str(p_str, &s_tmp_str);
-  str_append_char(p_str, ' ');
-#endif
+
+  str_empty(p_str);
   /* Facts */
   /* Size in octets */
   if (!vsf_sysutil_statbuf_is_dir(p_stat))
   {
-    str_alloc_text(p_str, "size=");
+    str_append_text(p_str, "size=");
     str_append_text(p_str, vsf_sysutil_filesize_t_to_str(size));
     str_append_char(p_str, ';');
   }
@@ -590,11 +525,49 @@ build_mlsx_entry(struct mystr* p_str, const struct mystr* p_filename_str,
   str_append_char(p_str, ';');
   /* Unique id of file/directory */
   str_append_text(p_str, "unique=");
-  snprintf(unique, sizeof(unique), "%lX+%lX",
-	   (unsigned long) p_st->st_dev, (unsigned long) p_st->st_ino);
-  str_append_text(p_str, unique);
+  str_append_text(p_str, vsf_sysutil_statbuf_get_unique(p_stat));
   str_append_char(p_str, ';');
-  /* TODO: Permissions */
+  /* Permissions */
+  str_append_text(p_str, "perm=");
+  if (vsf_access_check_file(p_filename_str))
+  {
+    if (vsf_sysutil_statbuf_is_dir(p_stat))
+    {
+      if (vsf_sysutil_statbuf_access(p_stat, VSF_SYSUTIL_R_OK, uid, gid,
+                                     num_supp_groups, p_supp_groups) == 0)
+      {
+        str_append_text(p_str, "l");
+      }
+      if (vsf_sysutil_statbuf_access(p_stat, VSF_SYSUTIL_W_OK, uid, gid,
+                                     num_supp_groups, p_supp_groups) == 0)
+      {
+        str_append_text(p_str, "cmp");
+      }
+      if (vsf_sysutil_statbuf_access(p_stat, VSF_SYSUTIL_X_OK, uid, gid,
+                                     num_supp_groups, p_supp_groups) == 0)
+      {
+        str_append_text(p_str, "e");
+      }
+      /* TODO: should check the permission of the parent directory */
+      str_append_text(p_str, "df");
+    }
+    else
+    {
+      if (vsf_sysutil_statbuf_access(p_stat, VSF_SYSUTIL_R_OK, uid, gid,
+                                     num_supp_groups, p_supp_groups) == 0)
+      {
+        str_append_text(p_str, "r");
+      }
+      if (vsf_sysutil_statbuf_access(p_stat, VSF_SYSUTIL_W_OK, uid, gid,
+                                     num_supp_groups, p_supp_groups) == 0)
+      {
+        str_append_text(p_str, "aw");
+      }
+      /* TODO: should check the permission of the parent directory */
+      str_append_text(p_str, "df");
+    }
+  }
+  str_append_char(p_str, ';');
   /* End of Facts */
 
   str_append_char(p_str, ' ');
@@ -603,5 +576,4 @@ build_mlsx_entry(struct mystr* p_str, const struct mystr* p_filename_str,
   str_append_str(p_str, p_filename_str);
   str_append_text(p_str, "\r\n");
 }
-
 

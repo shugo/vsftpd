@@ -42,7 +42,7 @@ main(int argc, const char* argv[])
     /* Data connection */
     -1, 0, -1, 0, 0, 0, 0,
     /* Login */
-    1, 0, INIT_MYSTR, INIT_MYSTR,
+    1, 0, INIT_MYSTR, INIT_MYSTR, 0, 0, 0, 0,
     /* Protocol state */
     0, 1, INIT_MYSTR, 0, 0,
     /* HTTP hacks */

@@ -1473,6 +1473,76 @@ vsf_sysutil_statbuf_get_sortkey_mtime(
   return intbuf;
 }
 
+const char*
+vsf_sysutil_statbuf_get_unique(const struct vsf_sysutil_statbuf* p_statbuf)
+{
+  static char uniquebuf[34];
+  const struct stat* p_stat = (const struct stat*) p_statbuf;
+  snprintf(uniquebuf, sizeof(uniquebuf), "%lX+%lX",
+           (unsigned long) p_stat->st_dev, (unsigned long) p_stat->st_ino);
+  return uniquebuf;
+}
+
+int
+vsf_sysutil_statbuf_access(const struct vsf_sysutil_statbuf* p_statbuf,
+                           int mode, int uid, int gid,
+                           int num_supp_groups, int* p_supp_groups)
+{
+  const struct stat* p_stat = (const struct stat*) p_statbuf;
+  mode_t mask = S_IROTH | S_IWOTH | S_IXOTH;
+  int i;
+
+  /* root */
+  if (uid == 0)
+  {
+    return 0;
+  }
+
+  if ((int) p_stat->st_uid == uid)
+  {
+    mask |= S_IRUSR | S_IWUSR | S_IXUSR;
+  }
+  if ((int) p_stat->st_gid == gid)
+  {
+    mask |= S_IRGRP | S_IWGRP | S_IXGRP;
+  }
+  else
+  {
+    for (i = 0; i < num_supp_groups; i++)
+    {
+      if ((int) p_stat->st_gid == p_supp_groups[i])
+      {
+        mask |= S_IRGRP | S_IWGRP | S_IXGRP;
+      }
+    }
+  }
+
+  mask &= p_stat->st_mode;
+  if (mode & R_OK)
+  {
+    if (!(mask & (S_IRUSR | S_IRGRP | S_IROTH)))
+    {
+      return -1;
+    }
+  }
+  if (mode & W_OK)
+  {
+    if (!(mask & (S_IWUSR | S_IWGRP | S_IWOTH)))
+    {
+      return -1;
+    }
+  }
+  if (mode & X_OK)
+  {
+    if (!(mask & (S_IXUSR | S_IXGRP | S_IXOTH)))
+    {
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
 void
 vsf_sysutil_fchown(const int fd, const int uid, const int gid)
 {
@@ -2493,6 +2563,38 @@ vsf_sysutil_initgroups(const struct vsf_sysutil_user* p_user)
   if (retval != 0)
   {
     die("initgroups");
+  }
+}
+
+int
+vsf_sysutil_getgroups(int** p_groups)
+{
+  int ngroups, i;
+  gid_t* groups;
+
+  ngroups = getgroups(0, NULL);
+  if (ngroups == -1)
+  {
+    *p_groups = NULL;
+    return 0;
+  }
+  else
+  {
+    groups = vsf_sysutil_malloc(ngroups * sizeof(gid_t));
+    ngroups = getgroups(ngroups, groups);
+    if (ngroups == -1)
+    {
+      vsf_sysutil_free(groups);
+      *p_groups = NULL;
+      return 0;
+    }
+    *p_groups = vsf_sysutil_malloc(ngroups * sizeof(int));
+    for (i = 0; i < ngroups; i++)
+    {
+      (*p_groups)[i] = groups[i];
+    }
+    vsf_sysutil_free(groups);
+    return ngroups;
   }
 }
 

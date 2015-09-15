@@ -68,7 +68,7 @@ static int port_active(struct vsf_session* p_sess);
 static void pasv_cleanup(struct vsf_session* p_sess);
 static void port_cleanup(struct vsf_session* p_sess);
 static void handle_dir_common(struct vsf_session* p_sess,
-			      enum EVSFListType e_list_type,
+                              enum EVSFListType e_list_type,
                               int stat_cmd);
 static void prepend_path_to_filename(struct mystr* p_str);
 static int get_remote_transfer_fd(struct vsf_session* p_sess,
@@ -399,7 +399,7 @@ process_post_login(struct vsf_session* p_sess)
       handle_prot(p_sess);
     }
     else if (tunable_dirlist_enable &&
-	     str_equal_text(&p_sess->ftp_cmd_str, "MLSD"))
+             str_equal_text(&p_sess->ftp_cmd_str, "MLSD"))
     {
       handle_mlsd(p_sess);
     }
@@ -806,8 +806,8 @@ handle_list(struct vsf_session* p_sess)
 }
 
 static void
-handle_dir_common(struct vsf_session* p_sess, enum EVSFListType e_list_type,
-		  int stat_cmd)
+handle_dir_common(struct vsf_session* p_sess,
+                  enum EVSFListType e_list_type, int stat_cmd)
 {
   static struct mystr s_option_str;
   static struct mystr s_filter_str;
