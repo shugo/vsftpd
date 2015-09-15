@@ -343,7 +343,7 @@ void vsf_sysutil_seteuid_numeric(int uid);
 void vsf_sysutil_setegid_numeric(int gid);
 void vsf_sysutil_clear_supp_groups(void);
 void vsf_sysutil_initgroups(const struct vsf_sysutil_user* p_user);
-int vsf_sysutil_getgroups(int **groups);
+int vsf_sysutil_getgroups(int** p_groups);
 void vsf_sysutil_chroot(const char* p_root_path);
 
 /* Time handling */
