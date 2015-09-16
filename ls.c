@@ -25,6 +25,7 @@ static void build_dir_line(struct mystr* p_str,
 static void build_mlsx_entry(struct mystr* p_str,
                              const struct mystr* p_filename_str,
                              const struct vsf_sysutil_statbuf* p_stat,
+                             const struct vsf_sysutil_statbuf* p_parent_stat,
                              int uid, int gid,
                              int num_supp_groups, int* p_supp_groups);
 
@@ -40,6 +41,11 @@ vsf_ls_populate_dir_list(struct vsf_session* p_sess,
 {
   struct mystr dirline_str = INIT_MYSTR;
   struct mystr normalised_base_dir_str = INIT_MYSTR;
+  struct mystr parent_dir_str = INIT_MYSTR;
+  struct mystr grandparent_dir_str = INIT_MYSTR;
+  static struct vsf_sysutil_statbuf* s_p_dir_statbuf;
+  static struct vsf_sysutil_statbuf* s_p_parent_dir_statbuf;
+  static struct vsf_sysutil_statbuf* s_p_grandparent_dir_statbuf;
   struct str_locate_result loc_result;
   int a_option;
   int r_option;
@@ -92,6 +98,36 @@ vsf_ls_populate_dir_list(struct vsf_session* p_sess,
     if (str_get_char_at(&normalised_base_dir_str, len - 1) != '/')
     {
       str_append_char(&normalised_base_dir_str, '/');
+    }
+  }
+  if (e_list_type == kVSFListTypeMachineReadable)
+  {
+    int retval;
+    if (str_isempty(&normalised_base_dir_str))
+    {
+      retval = vsf_sysutil_lstat(".", &s_p_dir_statbuf);
+    }
+    else
+    {
+      retval = str_lstat(&normalised_base_dir_str, &s_p_dir_statbuf);
+    }
+    if (vsf_sysutil_retval_is_error(retval))
+    {
+      goto out;
+    }
+    str_copy(&parent_dir_str, &normalised_base_dir_str);
+    str_append_text(&parent_dir_str, "..");
+    retval = str_lstat(&parent_dir_str, &s_p_parent_dir_statbuf);
+    if (vsf_sysutil_retval_is_error(retval))
+    {
+      goto out;
+    }
+    str_copy(&grandparent_dir_str, &normalised_base_dir_str);
+    str_append_text(&grandparent_dir_str, "../..");
+    retval = str_lstat(&grandparent_dir_str, &s_p_grandparent_dir_statbuf);
+    if (vsf_sysutil_retval_is_error(retval))
+    {
+      goto out;
     }
   }
   /* If we're going to need to do time comparisions, cache the local time */
@@ -205,7 +241,17 @@ vsf_ls_populate_dir_list(struct vsf_session* p_sess,
         break;
       case kVSFListTypeMachineReadable:
         {
-          build_mlsx_entry(&dirline_str, &s_next_filename_str, s_p_statbuf,
+          struct vsf_sysutil_statbuf* p_parent_stat = s_p_dir_statbuf;
+          if (str_equal_text(&s_next_filename_str, "."))
+          {
+            p_parent_stat = s_p_parent_dir_statbuf;
+          }
+          else if (str_equal_text(&s_next_filename_str, ".."))
+          {
+            p_parent_stat = s_p_grandparent_dir_statbuf;
+          }
+          build_mlsx_entry(&dirline_str, &s_next_filename_str,
+                           s_p_statbuf, p_parent_stat,
                            p_sess->uid, p_sess->gid,
                            p_sess->num_supp_groups, p_sess->p_supp_groups);
         }
@@ -245,8 +291,11 @@ vsf_ls_populate_dir_list(struct vsf_session* p_sess,
   {
     str_list_sort(p_subdir_list, r_option);
   }
+out:
   str_free(&dirline_str);
   str_free(&normalised_base_dir_str);
+  str_free(&parent_dir_str);
+  str_free(&grandparent_dir_str);
 }
 
 int
@@ -480,6 +529,7 @@ build_dir_line(struct mystr* p_str, const struct mystr* p_filename_str,
 static void
 build_mlsx_entry(struct mystr* p_str, const struct mystr* p_filename_str,
                  const struct vsf_sysutil_statbuf* p_stat,
+                 const struct vsf_sysutil_statbuf* p_parent_stat,
                  int uid, int gid, int num_supp_groups, int* p_supp_groups)
 {
   filesize_t size = vsf_sysutil_statbuf_get_size(p_stat);
@@ -548,8 +598,6 @@ build_mlsx_entry(struct mystr* p_str, const struct mystr* p_filename_str,
       {
         str_append_text(p_str, "e");
       }
-      /* TODO: should check the permission of the parent directory */
-      str_append_text(p_str, "df");
     }
     else
     {
@@ -563,7 +611,13 @@ build_mlsx_entry(struct mystr* p_str, const struct mystr* p_filename_str,
       {
         str_append_text(p_str, "aw");
       }
-      /* TODO: should check the permission of the parent directory */
+    }
+    if (p_parent_stat &&
+        vsf_sysutil_statbuf_access(p_parent_stat,
+                                   VSF_SYSUTIL_W_OK | VSF_SYSUTIL_X_OK,
+                                   uid, gid,
+                                   num_supp_groups, p_supp_groups) == 0)
+    {
       str_append_text(p_str, "df");
     }
   }
