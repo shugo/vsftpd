@@ -22,12 +22,20 @@ static void build_dir_line(struct mystr* p_str,
                            const struct mystr* p_filename_str,
                            const struct vsf_sysutil_statbuf* p_stat,
                            long curr_time);
-static void build_mlsx_entry(struct mystr* p_str,
-                             const struct mystr* p_filename_str,
-                             const struct vsf_sysutil_statbuf* p_stat,
-                             const struct vsf_sysutil_statbuf* p_parent_stat,
-                             int uid, int gid,
-                             int num_supp_groups, int* p_supp_groups);
+static void build_mlsx_entry(
+  struct vsf_session* p_sess, struct mystr* p_str,
+  const struct mystr* p_filename_str,
+  const struct vsf_sysutil_statbuf* p_stat,
+  const struct vsf_sysutil_statbuf* p_parent_stat);
+static void append_mlsx_fact(struct mystr* p_str, const char* factname,
+                             const char* value);
+static const char* mlsx_type(const struct mystr* p_filename_str,
+                             const struct vsf_sysutil_statbuf* p_stat);
+static const char* mlsx_perm(
+  struct vsf_session* p_sess,
+  const struct mystr* p_filename_str,
+  const struct vsf_sysutil_statbuf* p_stat,
+  const struct vsf_sysutil_statbuf* p_parent_stat);
 
 void
 vsf_ls_populate_dir_list(struct vsf_session* p_sess,
@@ -250,10 +258,8 @@ vsf_ls_populate_dir_list(struct vsf_session* p_sess,
           {
             p_parent_stat = s_p_grandparent_dir_statbuf;
           }
-          build_mlsx_entry(&dirline_str, &s_next_filename_str,
-                           s_p_statbuf, p_parent_stat,
-                           p_sess->uid, p_sess->gid,
-                           p_sess->num_supp_groups, p_sess->p_supp_groups);
+          build_mlsx_entry(p_sess, &dirline_str, &s_next_filename_str,
+                           s_p_statbuf, p_parent_stat);
         }
         break;
       default:
@@ -527,10 +533,10 @@ build_dir_line(struct mystr* p_str, const struct mystr* p_filename_str,
 }
 
 static void
-build_mlsx_entry(struct mystr* p_str, const struct mystr* p_filename_str,
+build_mlsx_entry(struct vsf_session* p_sess,
+                 struct mystr* p_str, const struct mystr* p_filename_str,
                  const struct vsf_sysutil_statbuf* p_stat,
-                 const struct vsf_sysutil_statbuf* p_parent_stat,
-                 int uid, int gid, int num_supp_groups, int* p_supp_groups)
+                 const struct vsf_sysutil_statbuf* p_parent_stat)
 {
   filesize_t size = vsf_sysutil_statbuf_get_size(p_stat);
 
@@ -539,89 +545,19 @@ build_mlsx_entry(struct mystr* p_str, const struct mystr* p_filename_str,
   /* Size in octets */
   if (!vsf_sysutil_statbuf_is_dir(p_stat))
   {
-    str_append_text(p_str, "size=");
-    str_append_text(p_str, vsf_sysutil_filesize_t_to_str(size));
-    str_append_char(p_str, ';');
+    append_mlsx_fact(p_str, "size", vsf_sysutil_filesize_t_to_str(size));
   }
   /* Last modification time */
-  str_append_text(p_str, "modify=");
-  str_append_text(p_str, vsf_sysutil_statbuf_get_numeric_date(p_stat, 0));
-  str_append_char(p_str, ';');
+  append_mlsx_fact(p_str, "modify",
+                   vsf_sysutil_statbuf_get_numeric_date(p_stat, 0));
   /* Entry type */
-  str_append_text(p_str, "type=");
-  if (vsf_sysutil_statbuf_is_dir(p_stat))
-  {
-    if (str_equal_text(p_filename_str, "."))
-    {
-      str_append_text(p_str, "cdir");
-    }
-    else if (str_equal_text(p_filename_str, ".."))
-    {
-      str_append_text(p_str, "pdir");
-    }
-    else
-    {
-      str_append_text(p_str, "dir");
-    }
-  }
-  else if (vsf_sysutil_statbuf_is_symlink(p_stat))
-  {
-    str_append_text(p_str, "OS.unix=symlink");
-  }
-  else
-  {
-    str_append_text(p_str, "file");
-  }
-  str_append_char(p_str, ';');
+  append_mlsx_fact(p_str, "type", mlsx_type(p_filename_str, p_stat));
   /* Unique id of file/directory */
-  str_append_text(p_str, "unique=");
-  str_append_text(p_str, vsf_sysutil_statbuf_get_unique(p_stat));
-  str_append_char(p_str, ';');
+  append_mlsx_fact(p_str, "unique", vsf_sysutil_statbuf_get_unique(p_stat));
   /* Permissions */
-  str_append_text(p_str, "perm=");
-  if (vsf_access_check_file(p_filename_str))
-  {
-    if (vsf_sysutil_statbuf_is_dir(p_stat))
-    {
-      if (vsf_sysutil_statbuf_access(p_stat, VSF_SYSUTIL_R_OK, uid, gid,
-                                     num_supp_groups, p_supp_groups) == 0)
-      {
-        str_append_text(p_str, "l");
-      }
-      if (vsf_sysutil_statbuf_access(p_stat, VSF_SYSUTIL_W_OK, uid, gid,
-                                     num_supp_groups, p_supp_groups) == 0)
-      {
-        str_append_text(p_str, "cmp");
-      }
-      if (vsf_sysutil_statbuf_access(p_stat, VSF_SYSUTIL_X_OK, uid, gid,
-                                     num_supp_groups, p_supp_groups) == 0)
-      {
-        str_append_text(p_str, "e");
-      }
-    }
-    else
-    {
-      if (vsf_sysutil_statbuf_access(p_stat, VSF_SYSUTIL_R_OK, uid, gid,
-                                     num_supp_groups, p_supp_groups) == 0)
-      {
-        str_append_text(p_str, "r");
-      }
-      if (vsf_sysutil_statbuf_access(p_stat, VSF_SYSUTIL_W_OK, uid, gid,
-                                     num_supp_groups, p_supp_groups) == 0)
-      {
-        str_append_text(p_str, "aw");
-      }
-    }
-    if (p_parent_stat &&
-        vsf_sysutil_statbuf_access(p_parent_stat,
-                                   VSF_SYSUTIL_W_OK | VSF_SYSUTIL_X_OK,
-                                   uid, gid,
-                                   num_supp_groups, p_supp_groups) == 0)
-    {
-      str_append_text(p_str, "df");
-    }
-  }
-  str_append_char(p_str, ';');
+  append_mlsx_fact(p_str, "perm",
+                   mlsx_perm(p_sess, p_filename_str, p_stat,
+                             p_parent_stat));
   /* End of Facts */
 
   str_append_char(p_str, ' ');
@@ -629,5 +565,123 @@ build_mlsx_entry(struct mystr* p_str, const struct mystr* p_filename_str,
   /* Pathname */
   str_append_str(p_str, p_filename_str);
   str_append_text(p_str, "\r\n");
+}
+
+static void append_mlsx_fact(struct mystr* p_str, const char* factname,
+                             const char* value)
+{
+  str_append_text(p_str, factname);
+  str_append_char(p_str, '=');
+  str_append_text(p_str, value);
+  str_append_char(p_str, ';');
+}
+
+static const char*
+mlsx_type(const struct mystr* p_filename_str,
+          const struct vsf_sysutil_statbuf* p_stat)
+{
+  if (vsf_sysutil_statbuf_is_dir(p_stat))
+  {
+    if (str_equal_text(p_filename_str, "."))
+    {
+      return "cdir";
+    }
+    else if (str_equal_text(p_filename_str, ".."))
+    {
+      return "pdir";
+    }
+    else
+    {
+      return "dir";
+    }
+  }
+  else if (vsf_sysutil_statbuf_is_symlink(p_stat))
+  {
+    return "OS.unix=symlink";
+  }
+  else
+  {
+    return "file";
+  }
+}
+
+static const char*
+mlsx_perm(struct vsf_session* p_sess,
+          const struct mystr* p_filename_str,
+          const struct vsf_sysutil_statbuf* p_stat,
+          const struct vsf_sysutil_statbuf* p_parent_stat)
+{
+  static char permbuf[11];
+  char* p = permbuf;
+
+  if (vsf_access_check_file(p_filename_str))
+  {
+    if (vsf_sysutil_statbuf_is_dir(p_stat))
+    {
+      if (vsf_sysutil_statbuf_access(p_stat, VSF_SYSUTIL_R_OK,
+                                     p_sess->uid, p_sess->gid,
+                                     p_sess->num_supp_groups,
+                                     p_sess->p_supp_groups) == 0)
+      {
+        *p++ = 'l';
+      }
+      if (tunable_write_enable &&
+          vsf_sysutil_statbuf_access(p_stat, VSF_SYSUTIL_W_OK,
+                                     p_sess->uid, p_sess->gid,
+                                     p_sess->num_supp_groups,
+                                     p_sess->p_supp_groups) == 0)
+      {
+        if (tunable_anon_other_write_enable || !p_sess->is_anonymous)
+        {
+          *p++ = 'c';
+          *p++ = 'p';
+        }
+        if (tunable_anon_mkdir_write_enable || !p_sess->is_anonymous)
+        {
+          *p++ = 'm';
+        }
+      }
+      if (vsf_sysutil_statbuf_access(p_stat, VSF_SYSUTIL_X_OK,
+                                     p_sess->uid, p_sess->gid,
+                                     p_sess->num_supp_groups,
+                                     p_sess->p_supp_groups) == 0)
+      {
+        *p++ = 'e';
+      }
+    }
+    else
+    {
+      if (vsf_sysutil_statbuf_access(p_stat, VSF_SYSUTIL_R_OK,
+                                     p_sess->uid, p_sess->gid,
+                                     p_sess->num_supp_groups,
+                                     p_sess->p_supp_groups) == 0)
+      {
+        *p++ = 'r';
+      }
+      if (tunable_write_enable &&
+          (tunable_anon_other_write_enable || !p_sess->is_anonymous) &&
+          vsf_sysutil_statbuf_access(p_stat, VSF_SYSUTIL_W_OK,
+                                     p_sess->uid, p_sess->gid,
+                                     p_sess->num_supp_groups,
+                                     p_sess->p_supp_groups) == 0)
+      {
+        *p++ = 'a';
+        *p++ = 'w';
+      }
+    }
+    if (tunable_write_enable &&
+        (tunable_anon_other_write_enable || !p_sess->is_anonymous) &&
+        vsf_sysutil_statbuf_access(p_parent_stat,
+                                   VSF_SYSUTIL_W_OK | VSF_SYSUTIL_X_OK,
+                                   p_sess->uid, p_sess->gid,
+                                   p_sess->num_supp_groups,
+                                   p_sess->p_supp_groups) == 0)
+    {
+      *p++ = 'd';
+      *p++ = 'f';
+    }
+  }
+  *p = '\0';
+  return permbuf;
 }
 
