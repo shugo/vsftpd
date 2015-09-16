@@ -14,7 +14,6 @@
 #include "str.h"
 #include "strlist.h"
 #include "sysstr.h"
-#include "sysutil.h"
 #include "utility.h"
 #include "tunables.h"
 
@@ -22,11 +21,6 @@ static void build_dir_line(struct mystr* p_str,
                            const struct mystr* p_filename_str,
                            const struct vsf_sysutil_statbuf* p_stat,
                            long curr_time);
-static void build_mlsx_entry(
-  struct vsf_session* p_sess, struct mystr* p_str,
-  const struct mystr* p_filename_str,
-  const struct vsf_sysutil_statbuf* p_stat,
-  const struct vsf_sysutil_statbuf* p_parent_stat);
 static void append_mlsx_fact(struct mystr* p_str, const char* factname,
                              const char* value);
 static const char* mlsx_type(const struct mystr* p_filename_str,
@@ -258,8 +252,8 @@ vsf_ls_populate_dir_list(struct vsf_session* p_sess,
           {
             p_parent_stat = s_p_grandparent_dir_statbuf;
           }
-          build_mlsx_entry(p_sess, &dirline_str, &s_next_filename_str,
-                           s_p_statbuf, p_parent_stat);
+          vsf_build_mlsx_entry(p_sess, &dirline_str, &s_next_filename_str,
+                               s_p_statbuf, p_parent_stat);
         }
         break;
       default:
@@ -532,19 +526,18 @@ build_dir_line(struct mystr* p_str, const struct mystr* p_filename_str,
   str_append_text(p_str, "\r\n");
 }
 
-static void
-build_mlsx_entry(struct vsf_session* p_sess,
-                 struct mystr* p_str, const struct mystr* p_filename_str,
-                 const struct vsf_sysutil_statbuf* p_stat,
-                 const struct vsf_sysutil_statbuf* p_parent_stat)
+void
+vsf_build_mlsx_entry(struct vsf_session* p_sess,
+                     struct mystr* p_str, const struct mystr* p_filename_str,
+                     const struct vsf_sysutil_statbuf* p_stat,
+                     const struct vsf_sysutil_statbuf* p_parent_stat)
 {
-  filesize_t size = vsf_sysutil_statbuf_get_size(p_stat);
-
   str_empty(p_str);
   /* Facts */
   /* Size in octets */
   if (!vsf_sysutil_statbuf_is_dir(p_stat))
   {
+    filesize_t size = vsf_sysutil_statbuf_get_size(p_stat);
     append_mlsx_fact(p_str, "size", vsf_sysutil_filesize_t_to_str(size));
   }
   /* Last modification time */

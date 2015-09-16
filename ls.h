@@ -2,6 +2,7 @@
 #define VSF_LS_H
 
 #include "ftpdataio.h"
+#include "sysutil.h"
 
 struct mystr;
 struct mystr_list;
@@ -48,6 +49,22 @@ void vsf_ls_populate_dir_list(struct vsf_session* p_sess,
 int vsf_filename_passes_filter(const struct mystr* p_filename_str,
                                const struct mystr* p_filter_str,
                                unsigned int* iters);
+
+/* vsf_build_mlsx_entry()
+ * PURPOSE
+ * Build an entry for the MLST and MLSD commands specified in RFC 3659.
+ * PARAMETERS
+ * p_sess          - the current FTP session object
+ * p_str           - the result is written here
+ * p_filename_str  - the filename of the target
+ * p_stat          - the status of the target file
+ * p_parent_stat   - the status of the parent directory of the target file
+ */
+void vsf_build_mlsx_entry(
+  struct vsf_session* p_sess, struct mystr* p_str,
+  const struct mystr* p_filename_str,
+  const struct vsf_sysutil_statbuf* p_stat,
+  const struct vsf_sysutil_statbuf* p_parent_stat);
 
 #endif /* VSF_LS_H */
 

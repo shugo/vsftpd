@@ -12,6 +12,7 @@
 #include "ftpcodes.h"
 #include "ftpcmdio.h"
 #include "ftpdataio.h"
+#include "ls.h"
 #include "utility.h"
 #include "tunables.h"
 #include "defs.h"
@@ -58,6 +59,7 @@ static void handle_help(struct vsf_session* p_sess);
 static void handle_stou(struct vsf_session* p_sess);
 static void handle_stat(struct vsf_session* p_sess);
 static void handle_stat_file(struct vsf_session* p_sess);
+static void handle_mlst(struct vsf_session* p_sess);
 static void handle_mlsd(struct vsf_session* p_sess);
 static void handle_logged_in_user(struct vsf_session* p_sess);
 static void handle_logged_in_pass(struct vsf_session* p_sess);
@@ -399,6 +401,11 @@ process_post_login(struct vsf_session* p_sess)
       handle_prot(p_sess);
     }
     else if (tunable_dirlist_enable &&
+             str_equal_text(&p_sess->ftp_cmd_str, "MLST"))
+    {
+      handle_mlst(p_sess);
+    }
+    else if (tunable_dirlist_enable &&
              str_equal_text(&p_sess->ftp_cmd_str, "MLSD"))
     {
       handle_mlsd(p_sess);
@@ -438,6 +445,7 @@ process_post_login(struct vsf_session* p_sess)
              str_equal_text(&p_sess->ftp_cmd_str, "STAT") ||
              str_equal_text(&p_sess->ftp_cmd_str, "PBSZ") ||
              str_equal_text(&p_sess->ftp_cmd_str, "PROT") ||
+             str_equal_text(&p_sess->ftp_cmd_str, "MLST") ||
              str_equal_text(&p_sess->ftp_cmd_str, "MLSD"))
     {
       vsf_cmdio_write(p_sess, FTP_NOPERM, "Permission denied.");
@@ -1901,6 +1909,79 @@ static void
 handle_stat_file(struct vsf_session* p_sess)
 {
   handle_dir_common(p_sess, kVSFListTypeHumanReadable, 1);
+}
+
+static void
+handle_mlst(struct vsf_session* p_sess)
+{
+  static struct mystr s_entry_str;
+  static struct mystr s_filter_str;
+  static struct mystr s_filename_str;
+  static struct mystr s_parent_dir_str;
+  static struct mystr s_header_str;
+  static struct vsf_sysutil_statbuf* s_p_stat;
+  static struct vsf_sysutil_statbuf* s_p_parent_dir_stat;
+  int retval;
+  struct str_locate_result locate_result;
+  str_empty(&s_filter_str);
+  /* By default open the current directory */
+  str_alloc_text(&s_filename_str, ".");
+  str_copy(&s_filter_str, &p_sess->ftp_arg_str);
+  if (!str_isempty(&s_filter_str))
+  {
+    resolve_tilde(&s_filter_str, p_sess);
+    if (!vsf_access_check_file(&s_filter_str))
+    {
+      vsf_cmdio_write(p_sess, FTP_NOPERM, "Permission denied.");
+      return;
+    }
+    str_copy(&s_filename_str, &s_filter_str);
+  }
+  retval = str_lstat(&s_filename_str, &s_p_stat);
+  if (vsf_sysutil_retval_is_error(retval))
+  {
+    vsf_cmdio_write(p_sess, FTP_NOPERM, "The file cannot be listed.");
+    return;
+  }
+  locate_result = str_locate_char(&s_filename_str, '/');
+  if (locate_result.found)
+  {
+    str_copy(&s_parent_dir_str, &s_filename_str);
+    str_split_char_reverse(&s_parent_dir_str, &s_filter_str, '/');
+    if (str_isempty(&s_parent_dir_str))
+    {
+      str_alloc_text(&s_parent_dir_str, "/");
+    }
+  }
+  else
+  {
+    if (str_equal_text(&s_filename_str, "."))
+    {
+      str_alloc_text(&s_parent_dir_str, "..");
+    }
+    else if (str_equal_text(&s_filename_str, ".."))
+    {
+      str_alloc_text(&s_parent_dir_str, "../..");
+    }
+    else
+    {
+      str_alloc_text(&s_parent_dir_str, ".");
+    }
+  }
+  retval = str_lstat(&s_parent_dir_str, &s_p_parent_dir_stat);
+  if (vsf_sysutil_retval_is_error(retval))
+  {
+    vsf_cmdio_write(p_sess, FTP_NOPERM, "The file cannot be listed.");
+    return;
+  }
+  vsf_build_mlsx_entry(p_sess, &s_entry_str, &s_filename_str,
+                       s_p_stat, s_p_parent_dir_stat);
+  str_alloc_text(&s_header_str, "Start of list for ");
+  str_append_str(&s_header_str, &s_filename_str);
+  vsf_cmdio_write_str_hyphen(p_sess, FTP_MLSTOK, &s_header_str);
+  vsf_cmdio_write_raw(p_sess, " ");
+  vsf_cmdio_write_raw(p_sess, str_getbuf(&s_entry_str));
+  vsf_cmdio_write(p_sess, FTP_MLSTOK, "End of list");
 }
 
 static void

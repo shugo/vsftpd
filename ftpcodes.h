@@ -37,6 +37,7 @@
 #define FTP_RMDIROK           250
 #define FTP_DELEOK            250
 #define FTP_RENAMEOK          250
+#define FTP_MLSTOK            250
 #define FTP_PWDOK             257
 #define FTP_MKDIROK           257
 
